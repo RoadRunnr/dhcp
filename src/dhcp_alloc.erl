@@ -335,8 +335,15 @@ decline_address(A, ClientId) ->
 	    {error, "Allocated to other lease."}
     end.
 
-cancel_timer(Timer) when is_reference(Timer) ->
-    erlang:cancel_timer(Timer);
+cancel_timer(Ref) when is_reference(Ref) ->
+    case erlang:cancel_timer(Ref) of
+        false ->
+            receive {timeout, Ref, _} -> 0
+            after 0 -> false
+            end;
+        RemainingTime ->
+            RemainingTime
+    end;
 cancel_timer(_Timer) ->
     ok.
 
