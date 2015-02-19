@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/4]).
+-export([start_link/4,fmt_clientid/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -222,7 +222,7 @@ handle_dhcp(?DHCPRELEASE, D, _State) ->
 handle_dhcp(?DHCPINFORM, D, State) ->
     Gateway = D#dhcp.giaddr,
     IP = D#dhcp.ciaddr,
-    lager:info("DHCPINFORM from ~s", [fmt_ip(IP)]),
+    lager:info("DHCPINFORM of ~s from ~s", [fmt_ip(IP), fmt_clientid(D)]),
     case dhcp_alloc:local_conf(Gateway) of
 	{ok, Opts} ->
 	    %% No Lease Time (RFC2131 sec. 4.3.5)
@@ -360,10 +360,17 @@ get_requested_ip(D) when is_record(D, dhcp) ->
 	    ?INADDR_ANY
     end.
 
+to_hex([], Acc) ->
+    lists:flatten(lists:reverse(Acc));
+to_hex([X|Tail], Acc) ->
+    to_hex(Tail, [io_lib:format("~2.16.0b", [X])|Acc]).
+
 fmt_clientid(D) when is_record(D, dhcp) ->
     fmt_clientid(get_client_id(D));
-fmt_clientid([_T, E1, E2, E3, E4, E5, E6]) ->
+fmt_clientid([1, E1, E2, E3, E4, E5, E6]) ->
     fmt_clientid({E1, E2, E3, E4, E5, E6});
+fmt_clientid(Id) when is_list(Id) ->
+    to_hex(Id, []);
 fmt_clientid({E1, E2, E3, E4, E5, E6}) ->
     lists:flatten(
       io_lib:format("~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b",
