@@ -61,21 +61,40 @@ init([]) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
 get_config() ->
+    Config = application:get_all_env(),
+    io:format("Config: ~p~n", [Config]),
+    case process_config(Config) of
+	{error, _} ->
+	    get_config_file();
+	Other ->
+	    Other
+    end.
+
+get_config_file() ->
     ConfDir = case code:priv_dir(dhcp) of
 		  PrivDir when is_list(PrivDir) -> PrivDir;
                   {error, _Reason} -> "."
               end,
     case file:consult(filename:join(ConfDir, "dhcp.conf")) of
         {ok, Terms} ->
-	    NetNameSpace = proplists:get_value(netns,       Terms),
-	    Interface =    proplists:get_value(interface,   Terms),
-            ServerId =     proplists:get_value(server_id,   Terms, {0, 0, 0, 0}),
-            NextServer =   proplists:get_value(next_server, Terms, {0, 0, 0, 0}),
-            LeaseFile =    proplists:get_value(lease_file,  Terms, ?DHCP_LEASEFILE),
-            Subnets =      [X || X <- Terms, is_record(X, subnet)],
-            Hosts =        [X || X <- Terms, is_record(X, host)],
-            {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts};
+	    process_config(Terms);
         {error, Reason} ->
 	    {error, Reason}
+    end.
+
+process_config(Config) ->
+    case lists:keyfind(subnets, 1, Config) of
+	false ->
+	    {error, no_subnet_declaration};
+	_ ->
+	    NetNameSpace = proplists:get_value(netns,       Config),
+	    Interface =    proplists:get_value(interface,   Config),
+	    ServerId =     proplists:get_value(server_id,   Config, {0, 0, 0, 0}),
+	    NextServer =   proplists:get_value(next_server, Config, {0, 0, 0, 0}),
+	    LeaseFile =    proplists:get_value(lease_file,  Config, ?DHCP_LEASEFILE),
+	    Subnets =      [X || X <- proplists:get_value(subnets, Config, []), is_record(X, subnet)],
+	    Hosts =        [X || X <- proplists:get_value(hosts,   Config, []), is_record(X, host)],
+	    {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts}
     end.
