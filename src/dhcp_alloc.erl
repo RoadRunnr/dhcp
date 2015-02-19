@@ -24,6 +24,9 @@
 -define(ADDRESS, dhcp_address).
 -define(LEASE, dhcp_lease).
 
+%% -define(SESSION, dhcp_session).
+-define(SESSION, scg_b_session).
+
 -define(DHCPOFFER_TIMEOUT, 3*60*1000).
 
 -define(IS_ALLOCATED(A), A#address.status == allocated).
@@ -158,7 +161,8 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({expired, IP}, State) ->
+handle_info({expired, ClientId, IP}, State) ->
+    ?SESSION:expired(ClientId, IP),
     Address = #address{ip = IP, status = available},
     ets:insert(?ADDRESS, Address),
     {noreply, State};
@@ -273,7 +277,7 @@ verify_address(ClientId, IP, S) ->
 reserve_address(A, ClientId) ->
     cancel_timer(A#address.timer),
     Timer = erlang:send_after(?DHCPOFFER_TIMEOUT, ?SERVER,
-			      {expired, A#address.ip}),
+			      {expired, ClientId, A#address.ip}),
     ets:insert(?ADDRESS, A#address{status = offered, timer = Timer}),
     DateTime = {date(), time()},
     Now = calendar:datetime_to_gregorian_seconds(DateTime),
@@ -296,7 +300,7 @@ allocate_address(A, ClientId) ->
 	    Expires = Gregorian + LeaseTime,
 	    Lease = #lease{clientid = ClientId, ip = IP, expires = Expires},
 	    dets:insert(?LEASE, Lease),
-	    T = erlang:send_after(LeaseTime * 1000, ?SERVER, {expired, IP}),
+	    T = erlang:send_after(LeaseTime * 1000, ?SERVER, {expired, ClientId, IP}),
 	    ets:insert(?ADDRESS, A#address{status = allocated, timer = T}),
 	    {ok, IP, Options};
 	false ->

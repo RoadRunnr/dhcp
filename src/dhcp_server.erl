@@ -26,6 +26,9 @@
 -define(INADDR_ANY, {0, 0, 0, 0}).
 -define(INADDR_BROADCAST, {255, 255, 255, 255}).
 
+%% -define(SESSION, dhcp_session).
+-define(SESSION, scg_b_session).
+
 -record(state, {if_name, socket, server_id, next_server}).
 
 -define(is_broadcast(D), (is_record(D, dhcp) andalso (D#dhcp.flags bsr 15) == 1)).
@@ -180,6 +183,7 @@ handle_dhcp(?DHCPREQUEST, D, State) ->
 		    IP = get_requested_ip(D),
 		    case dhcp_alloc:allocate(ClientId, IP) of
 			{ok, IP, Options} ->
+			    ?SESSION:allocated(ClientId, D#dhcp.chaddr, IP, D#dhcp.options),
 			    ack(D, IP, Options, State);
 			Other ->
 			    Other
@@ -209,17 +213,20 @@ handle_dhcp(?DHCPREQUEST, D, State) ->
 	    end
     end;
 handle_dhcp(?DHCPDECLINE, D, _State) ->
+    ClientId = get_client_id(D),
     IP = get_requested_ip(D),
     lager:info("DHCPDECLINE of ~s from ~s ~s",
 			  [fmt_ip(IP), fmt_clientid(D), fmt_hostname(D)]),
-    dhcp_alloc:decline(IP);
+    dhcp_alloc:decline(ClientId, IP);
 handle_dhcp(?DHCPRELEASE, D, _State) ->
     ClientId = get_client_id(D),
     lager:info("DHCPRELEASE of ~s from ~s ~s ~s",
 			  [fmt_ip(D#dhcp.ciaddr), fmt_clientid(D),
 			   fmt_hostname(D), fmt_gateway(D)]),
-    dhcp_alloc:release(ClientId, D#dhcp.ciaddr);
+    dhcp_alloc:release(ClientId, D#dhcp.ciaddr),
+    ?SESSION:released(ClientId, D#dhcp.ciaddr);
 handle_dhcp(?DHCPINFORM, D, State) ->
+    ClientId = get_client_id(D),
     Gateway = D#dhcp.giaddr,
     IP = D#dhcp.ciaddr,
     lager:info("DHCPINFORM of ~s from ~s", [fmt_ip(IP), fmt_clientid(D)]),
@@ -227,6 +234,7 @@ handle_dhcp(?DHCPINFORM, D, State) ->
 	{ok, Opts} ->
 	    %% No Lease Time (RFC2131 sec. 4.3.5)
 	    OptsSansLease = lists:keydelete(?DHO_DHCP_LEASE_TIME, 1, Opts),
+	    ?SESSION:informed(ClientId, IP, D#dhcp.options),
 	    ack(D, IP, OptsSansLease, State);
 	Other ->
 	    Other
