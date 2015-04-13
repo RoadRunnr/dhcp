@@ -46,12 +46,16 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     case get_config() of
-        {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts} ->
-            DHCPServer = {dhcp_server, {dhcp_server, start_link,
-                                        [NetNameSpace, Interface, ServerId, NextServer]},
-                          permanent, 2000, worker, [dhcp_server]},
+        {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts, Session} ->
+	    io:format("SubNets: ~p~n", [Subnets]),
+            %% DHCPServer = {dhcp_udp_server, {dhcp_udp_server, start_link,
+	    %% 				    [NetNameSpace, Interface, ServerId, NextServer]},
+            %%               permanent, 2000, worker, [dhcp_server]},
+            DHCPServer = {dhcp_raw_server, {dhcp_raw_server, start_link,
+					    [ServerId, NextServer, Session]},
+                          permanent, 2000, worker, [dhcp_raw_server]},
             DHCPAlloc = {dhcp_alloc, {dhcp_alloc, start_link,
-                                      [LeaseFile, Subnets, Hosts]},
+                                      [LeaseFile, Subnets, Hosts, Session]},
                          permanent, 2000, worker, [dhcp_alloc]},
             {ok, {{one_for_one, 0, 1}, [DHCPServer, DHCPAlloc]}};
         {error, Reason} ->
@@ -93,8 +97,9 @@ process_config(Config) ->
 	    Interface =    proplists:get_value(interface,   Config),
 	    ServerId =     proplists:get_value(server_id,   Config, {0, 0, 0, 0}),
 	    NextServer =   proplists:get_value(next_server, Config, {0, 0, 0, 0}),
+	    Session =      proplists:get_value(session,     Config),
 	    LeaseFile =    proplists:get_value(lease_file,  Config, ?DHCP_LEASEFILE),
 	    Subnets =      [X || X <- proplists:get_value(subnets, Config, []), is_record(X, subnet)],
 	    Hosts =        [X || X <- proplists:get_value(hosts,   Config, []), is_record(X, host)],
-	    {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts}
+	    {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts, Session}
     end.

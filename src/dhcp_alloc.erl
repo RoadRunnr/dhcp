@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/3, reserve/3, allocate/2, release/2, verify/3,
+-export([start_link/4, reserve/3, allocate/2, release/2, verify/3,
 	 extend/2, decline/2, local_conf/1]).
 
 %% gen_server callbacks
@@ -24,9 +24,6 @@
 -define(ADDRESS, dhcp_address).
 -define(LEASE, dhcp_lease).
 
-%% -define(SESSION, dhcp_session).
--define(SESSION, scg_b_session).
-
 -define(DHCPOFFER_TIMEOUT, 3*60*1000).
 
 -define(IS_ALLOCATED(A), A#address.status == allocated).
@@ -36,7 +33,7 @@
 
 -define(IS_NOT_EXPIRED(L, Now), L#lease.expires > Now).
 
--record(state, {subnets, hosts}).
+-record(state, {subnets, hosts, session}).
 
 %%====================================================================
 %% API
@@ -45,9 +42,9 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(LeaseFile, Subnets, Hosts) ->
+start_link(LeaseFile, Subnets, Hosts, Session) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE,
-			  [LeaseFile, Subnets, Hosts], []).
+			  [LeaseFile, Subnets, Hosts, Session], []).
 
 reserve(ClientId, Gateway, IP) ->
     gen_server:call(?SERVER, {reserve, ClientId, Gateway, IP}).
@@ -81,11 +78,11 @@ decline(ClientId, IP) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([LeaseFile, Subnets, Hosts]) ->
+init([LeaseFile, Subnets, Hosts, Session]) ->
     ets:new(?ADDRESS, [named_table, public, {keypos, #address.ip}]),
     dets:open_file(?LEASE, [{keypos, #lease.clientid}, {file, LeaseFile}]),
     lists:foreach(fun init_subnet/1, Subnets),
-    {ok, #state{subnets = Subnets, hosts = Hosts}}.
+    {ok, #state{subnets = Subnets, hosts = Hosts, session = Session}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -162,7 +159,7 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({expired, ClientId, IP}, State) ->
-    ?SESSION:expired(ClientId, IP),
+    dhcp_server:expired(ClientId, IP, State#state.session),
     Address = #address{ip = IP, status = available},
     ets:insert(?ADDRESS, Address),
     {noreply, State};
