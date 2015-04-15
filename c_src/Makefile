@@ -9,11 +9,11 @@ CFLAGS ?= -O2
 override CFLAGS += -std=gnu99 -Wall -fpic
 override LDFLAGS += -shared -fpic
 
-all : $(PRIVDIR)/dhcp_server.so
+all : $(PRIVDIR)/dhcp_udp_server.so
 
-$(PRIVDIR)/dhcp_server.so : dhcp_server.o
+$(PRIVDIR)/dhcp_udp_server.so : dhcp_udp_server.o
 	$(CC) $(LDFLAGS) -o $@ $^
 
 clean:
-	$(RM) -f $(PRIVDIR)/dhcp_server.so dhcp_server.o
+	$(RM) -f $(PRIVDIR)/dhcp_udp_server.so dhcp_udp_server.o
 

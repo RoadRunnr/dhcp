@@ -34,7 +34,7 @@ init() ->
     LibDir = filename:join([filename:dirname(code:which(?MODULE)), "..", "priv"]),
 
     %% load our nif library
-    case erlang:load_nif(filename:join(LibDir, "dhcp_server"), 0) of
+    case erlang:load_nif(filename:join(LibDir, "dhcp_udp_server"), 0) of
         ok ->
             ok;
         {error, {reload, _}} ->
