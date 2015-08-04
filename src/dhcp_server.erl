@@ -58,7 +58,7 @@ handle_dhcp(?DHCPREQUEST, D, Config) ->
 		{ok, IP, Options} ->
 		    allocated(ClientId, D#dhcp.chaddr, IP, D#dhcp.options, cfg(session, Config)),
 		    ack(D, IP, Options, Config);
-		noclient ->
+		nolease ->
 		    lager:error("Client ~s has no current bindings",
 					   [fmt_clientid(D)]),
 		    ok;
@@ -245,6 +245,7 @@ released(ClientId, IP, Session) ->
     invoke_session(released, [ClientId, IP], Session).
 
 invoke_session(_Event, _Args, undefined) ->
+    lager:error("Event for undefined session: ~p(~p)", [_Event, _Args]),
     ok;
 invoke_session(Event, Args, Session) ->
     try
