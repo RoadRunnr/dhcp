@@ -48,12 +48,12 @@ init([]) ->
     case get_config() of
         {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts, Session} ->
 	    io:format("SubNets: ~p~n", [Subnets]),
-            %% DHCPServer = {dhcp_udp_server, {dhcp_udp_server, start_link,
-	    %% 				    [NetNameSpace, Interface, ServerId, NextServer]},
-            %%               permanent, 2000, worker, [dhcp_server]},
-            DHCPServer = {dhcp_raw_server, {dhcp_raw_server, start_link,
-					    [ServerId, NextServer, Session]},
-                          permanent, 2000, worker, [dhcp_raw_server]},
+            DHCPServer = {dhcp_udp_server, {dhcp_udp_server, start_link,
+					    [NetNameSpace, Interface, ServerId, NextServer, Session]},
+                          permanent, 2000, worker, [dhcp_server]},
+            %% DHCPServer = {dhcp_raw_server, {dhcp_raw_server, start_link,
+	    %% 				    [ServerId, NextServer, Session]},
+            %%               permanent, 2000, worker, [dhcp_raw_server]},
             DHCPAlloc = {dhcp_alloc, {dhcp_alloc, start_link,
                                       [LeaseFile, Subnets, Hosts, Session]},
                          permanent, 2000, worker, [dhcp_alloc]},

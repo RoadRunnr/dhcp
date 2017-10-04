@@ -59,9 +59,9 @@ handle_dhcp(Packet) when is_binary(Packet) ->
 %%--------------------------------------------------------------------
 init([ServerId, NextServer, Session]) ->
     lager:info("Starting DHCP server..."),
-    {ok, #state{config = [#{server_id   => ServerId,
-			    next_server => NextServer,
-			    session     => Session}]}}.
+    {ok, #state{config = #{server_id   => ServerId,
+			   next_server => NextServer,
+			   session     => Session}}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |

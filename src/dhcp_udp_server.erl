@@ -74,9 +74,9 @@ init([NetNameSpace, Interface, ServerId, NextServer, Session]) ->
 	    lager:info("Starting DHCP server..."),
 	    {ok, #state{if_name = Interface,
 			socket = Socket,
-			config = [#{server_id   => ServerId,
-				    next_server => NextServer,
-				    session     => Session}]}};
+			config = #{server_id   => ServerId,
+				   next_server => NextServer,
+				   session     => Session}}};
 	{error, Reason} ->
 	    lager:error("Cannot open udp port ~w",
 				   [?DHCP_SERVER_PORT]),
