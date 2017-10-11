@@ -1,19 +1,12 @@
-PRIVDIR := ../priv
+CFLAGS +=-std=gnu99 -Wall -Werror -fPIC -I. $(shell erl -noinput -eval 'io:format("-I~s -I~s/erts-~s/include", [code:lib_dir(erl_interface, include), code:root_dir(), erlang:system_info(version)]), halt(0).')
+LDFLAGS +=-shared $(shell erl -noinput -eval 'io:format("-L~s", [code:lib_dir(erl_interface, lib)]), halt(0).')
 
-LD ?= ld
-CC ?= gcc
-RM ?= rm
+all : ../priv/dhcp_udp_server.so
 
-CFLAGS ?= -O2
-
-override CFLAGS += -std=gnu99 -Wall -fpic
-override LDFLAGS += -shared -fpic
-
-all : $(PRIVDIR)/dhcp_udp_server.so
-
-$(PRIVDIR)/dhcp_udp_server.so : dhcp_udp_server.o
-	$(CC) $(LDFLAGS) -o $@ $^
+../priv/dhcp_udp_server.so : dhcp_udp_server.o
+	(test -d ../priv || mkdir -p ../priv)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 clean:
-	$(RM) -f $(PRIVDIR)/dhcp_udp_server.so dhcp_udp_server.o
+	rm -f ../priv/dhcp_udp_server.so dhcp_udp_server.o
 
