@@ -127,11 +127,21 @@ binary_to_options(<<Tag, Rest/binary>>, Acc) ->
 		vendor ->
 		    <<N, Binary:N/binary, T/binary>> = Rest,
 		    binary_to_options(Binary);
+		relay_options ->
+		    <<N, Binary:N/binary, T/binary>> = Rest,
+		    binary_to_relay_suboptions(Binary);
 		unknown ->
 		    <<N, Binary:N/binary, T/binary>> = Rest,
 		    Binary
 	    end,
     binary_to_options(T, [{Tag, Value} | Acc]).
+
+binary_to_relay_suboptions(Bin) ->
+    binary_to_relay_suboptions(Bin, []).
+binary_to_relay_suboptions(<<>>, Acc) -> Acc;
+binary_to_relay_suboptions(<<Tag, N, SubOption:N/binary, Rest/binary>>, Acc) ->
+    binary_to_relay_suboptions(Rest, [{Tag, SubOption} | Acc ]).
+
 
 options_to_binary(Options) ->
     L = [<<(option_to_binary(Tag, Val))/binary>> || {Tag, Val} <- Options],
@@ -157,6 +167,9 @@ option_to_binary(Tag, Val) ->
 	    B = list_to_binary([ip_to_binary(IP) || IP <- Val]),
 	    <<Tag, (size(B)), B/binary>>;
 	vendor ->
+	    B = list_to_binary([<<T, (size(V)), V/binary>> || {T, V} <- Val]),
+	    <<Tag, (size(B)), B/binary>>;
+	relay_options ->
 	    B = list_to_binary([<<T, (size(V)), V/binary>> || {T, V} <- Val]),
 	    <<Tag, (size(B)), B/binary>>
     end.
@@ -238,7 +251,7 @@ type(?DHO_STREETTALK_SERVERS)          -> iplist;
 type(?DHO_STDA_SERVERS)                -> iplist;
 type(?DHO_USER_CLASS)                  -> string;
 type(?DHO_FQDN)                        -> string;
-type(?DHO_DHCP_AGENT_OPTIONS)          -> string;
+type(?DHO_DHCP_AGENT_OPTIONS)          -> relay_options;
 type(?DHO_NDS_SERVERS)                 -> iplist;
 type(?DHO_NDS_TREE_NAME)               -> string;
 type(?DHO_NDS_CONTEXT)                 -> string;
