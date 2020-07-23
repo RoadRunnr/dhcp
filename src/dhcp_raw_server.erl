@@ -25,9 +25,6 @@
 -define(INADDR_ANY, {0, 0, 0, 0}).
 -define(INADDR_BROADCAST, {255, 255, 255, 255}).
 
-%% -define(SESSION, dhcp_session).
--define(SESSION, scg_b_session).
-
 -record(state, {config}).
 
 -define(is_broadcast(D), (is_record(D, dhcp) andalso (D#dhcp.flags bsr 15) == 1)).
