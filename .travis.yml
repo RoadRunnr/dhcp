@@ -17,9 +17,3 @@ script:
   - env
   - ./rebar3 compile
   - ./rebar3 xref
-
-jobs:
-  include:
-    -
-    - dist: xenial
-      otp_release: 21.3.8.1
