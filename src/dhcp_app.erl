@@ -26,7 +26,6 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, _StartArgs) ->
-    lager:set_loglevel(lager_console_backend, debug),
     case dhcp_sup:start_link() of
 	{ok, Pid} ->
 	    {ok, Pid};

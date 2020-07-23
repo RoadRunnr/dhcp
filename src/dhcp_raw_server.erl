@@ -16,6 +16,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-include_lib("kernel/include/logger.hrl").
 -include("dhcp.hrl").
 
 -define(SERVER, ?MODULE).
@@ -55,7 +56,7 @@ handle_dhcp(Packet) when is_binary(Packet) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([ServerId, NextServer, Session]) ->
-    lager:info("Starting DHCP server..."),
+    ?LOG(info, "Starting DHCP server..."),
     {ok, #state{config = [#{server_id   => ServerId,
 			    next_server => NextServer,
 			    session     => Session}]}}.
@@ -76,7 +77,7 @@ handle_call({dhcp, <<_IhlVer:8/integer, _Tos:8/integer, _TotLen:16/integer,
 		     Packet/binary>>}, From, State) ->
     Source = {SrcIP, SrcPort},
     Request = dhcp_lib:decode(Packet),
-    lager:debug("DHCP Request: ~p, ~p", [Source, Request]),
+    ?LOG(debug, "DHCP Request: ~p, ~p", [Source, Request]),
     case dhcp_server:optsearch(?DHO_DHCP_MESSAGE_TYPE, Request) of
 	{value, MsgType} ->
 	    case dhcp_server:handle_dhcp(MsgType, Request, State#state.config) of
@@ -85,16 +86,16 @@ handle_call({dhcp, <<_IhlVer:8/integer, _Tos:8/integer, _TotLen:16/integer,
 		{reply, Reply} ->
 		    send_reply(From, Source, MsgType, Reply);
 		{error, Reason} ->
-		    lager:error(Reason);
+		    ?LOG(error, Reason);
 		Other ->
-		    lager:debug("DHCP result: ~w", [Other])
+		    ?LOG(debug, "DHCP result: ~w", [Other])
 	    end;
 	false ->
 	    ok
     end,
     {noreply, State};
 handle_call(_Request, _From, State) ->
-    lager:error("unknown call: ~p", [_Request]),
+    ?LOG(error, "unknown call: ~p", [_Request]),
     Reply = ok,
     {reply, Reply, State}.
 
@@ -138,18 +139,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 send_reply(From, Source, MsgType, Reply) ->
     {DstIP, DstPort} = get_dest(Source, MsgType, Reply),
-    lager:debug("Sending DHCP Reply to: ~w:~w", [DstIP, DstPort]),
+    ?LOG(debug, "Sending DHCP Reply to: ~w:~w", [DstIP, DstPort]),
     gen_server:reply(From, {reply, DstIP, DstPort, dhcp_lib:encode(Reply)}).
 
 %%% Behaviour is described in RFC2131 sec. 4.1
 get_dest(Source = {SrcIP, SrcPort}, MsgType, Reply)
   when is_record(Reply, dhcp) ->
     if Reply#dhcp.giaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #1"),
+	    ?LOG(debug, "get_dest: #1"),
 	    {Reply#dhcp.giaddr, ?DHCP_SERVER_PORT};
 
        Reply#dhcp.ciaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #2"),
+	    ?LOG(debug, "get_dest: #2"),
 	    if (MsgType =/= ?DHCPINFORM andalso SrcIP =/= Reply#dhcp.ciaddr)
 	       orelse SrcIP == ?INADDR_ANY orelse SrcPort == 0 ->
 		    {Reply#dhcp.ciaddr, ?DHCP_CLIENT_PORT};
@@ -158,14 +159,14 @@ get_dest(Source = {SrcIP, SrcPort}, MsgType, Reply)
 	    end;
 
        ?is_broadcast(Reply) ->
-	    lager:debug("get_dest: #3"),
+	    ?LOG(debug, "get_dest: #3"),
 	    {?INADDR_BROADCAST, ?DHCP_CLIENT_PORT};
 
        Reply#dhcp.yiaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #4"),
+	    ?LOG(debug, "get_dest: #4"),
 	    {{{Reply#dhcp.htype, Reply#dhcp.chaddr}, Reply#dhcp.yiaddr}, ?DHCP_CLIENT_PORT};
 
        true ->
-	    lager:debug("get_dest: #5"),
+	    ?LOG(debug, "get_dest: #5"),
 	    Source
     end.

@@ -16,6 +16,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
+-include_lib("kernel/include/logger.hrl").
 -include("dhcp.hrl").
 
 -on_load(init/0).
@@ -71,14 +72,14 @@ init([NetNameSpace, Interface, ServerId, NextServer, Session]) ->
     io:format("Opts: ~p~n", [Options]),
     case gen_udp:open(?DHCP_SERVER_PORT, Options) of
 	{ok, Socket} ->
-	    lager:info("Starting DHCP server..."),
+	    ?LOG(info, "Starting DHCP server..."),
 	    {ok, #state{if_name = Interface,
 			socket = Socket,
 			config = [#{server_id   => ServerId,
 				    next_server => NextServer,
 				    session     => Session}]}};
 	{error, Reason} ->
-	    lager:error("Cannot open udp port ~w",
+	    ?LOG(error, "Cannot open udp port ~w",
 				   [?DHCP_SERVER_PORT]),
 	    {stop, Reason}
     end.
@@ -122,9 +123,9 @@ handle_info({udp, Socket, IP, Port, Packet}, State = #state{socket = Socket}) ->
 		{reply, Reply} ->
 		    send_reply(Source, MsgType, Reply, State);
 		{error, Reason} ->
-		    lager:error(Reason);
+		    ?LOG(error, Reason);
 		Other ->
-		    lager:debug("DHCP result: ~w", [Other])
+		    ?LOG(debug, "DHCP result: ~w", [Other])
 	    end;
 	false ->
 	    ok
@@ -156,18 +157,18 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 send_reply(Source, MsgType, Reply, State) ->
     {DstIP, DstPort} = get_dest(Source, MsgType, Reply, State),
-    lager:debug("Sending DHCP Reply to: ~s:~w", [dhcp_server:fmt_ip(DstIP), DstPort]),
+    ?LOG(debug, "Sending DHCP Reply to: ~s:~w", [dhcp_server:fmt_ip(DstIP), DstPort]),
     gen_udp:send(State#state.socket, DstIP, DstPort, dhcp_lib:encode(Reply)).
 
 %%% Behaviour is described in RFC2131 sec. 4.1
 get_dest(Source = {SrcIP, SrcPort}, MsgType, Reply, Config)
   when is_record(Reply, dhcp) ->
     if Reply#dhcp.giaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #1"),
+	    ?LOG(debug, "get_dest: #1"),
 	    {Reply#dhcp.giaddr, ?DHCP_SERVER_PORT};
 
        Reply#dhcp.ciaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #2"),
+	    ?LOG(debug, "get_dest: #2"),
 	    if (MsgType =/= ?DHCPINFORM andalso SrcIP =/= Reply#dhcp.ciaddr)
 	       orelse SrcIP == ?INADDR_ANY orelse SrcPort == 0 ->
 		    {Reply#dhcp.ciaddr, ?DHCP_CLIENT_PORT};
@@ -176,16 +177,16 @@ get_dest(Source = {SrcIP, SrcPort}, MsgType, Reply, Config)
 	    end;
 
        ?is_broadcast(Reply) ->
-	    lager:debug("get_dest: #3"),
+	    ?LOG(debug, "get_dest: #3"),
 	    {?INADDR_BROADCAST, ?DHCP_CLIENT_PORT};
 
        Reply#dhcp.yiaddr =/= ?INADDR_ANY ->
-	    lager:debug("get_dest: #4"),
+	    ?LOG(debug, "get_dest: #4"),
 	    arp_inject(Reply#dhcp.yiaddr, Reply#dhcp.htype, Reply#dhcp.chaddr, Config),
 	    {Reply#dhcp.yiaddr, ?DHCP_CLIENT_PORT};
 
        true ->
-	    lager:debug("get_dest: #5"),
+	    ?LOG(debug, "get_dest: #5"),
 	    Source
     end.
 
@@ -193,7 +194,7 @@ arp_inject_nif(_IfName, _IP, _Type, _Addr, _FD) -> error(nif_not_loaded).
 
 arp_inject(IP, Type, Addr, #state{if_name = IfName, socket = Socket}) ->
     {ok, FD} = inet:getfd(Socket),
-    lager:debug("FD: ~w", [FD]),
+    ?LOG(debug, "FD: ~w", [FD]),
     arp_inject_nif(IfName, dhcp_lib:ip_to_binary(IP), Type, dhcp_lib:eth_to_binary(Addr), FD).
 
 get_nsopts(NetNameSpace, Opts)

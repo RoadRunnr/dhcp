@@ -11,6 +11,7 @@
 -export([fmt_clientid/1, fmt_ip/1]).
 -export([handle_dhcp/3, optsearch/2, expired/3]).
 
+-include_lib("kernel/include/logger.hrl").
 -include("dhcp.hrl").
 
 -define(INADDR_ANY, {0, 0, 0, 0}).
@@ -21,7 +22,7 @@
 %%% The DHCP message handler
 %%%-------------------------------------------------------------------
 handle_dhcp(?DHCPDISCOVER, D, Config) ->
-    lager:info("DHCPDISCOVER from ~s ~s ~s",
+    ?LOG(info, "DHCPDISCOVER from ~s ~s ~s",
 			  [fmt_clientid(D), fmt_hostname(D), fmt_gateway(D)]),
     ClientId = get_client_id(D),
     Gateway = D#dhcp.giaddr,
@@ -34,7 +35,7 @@ handle_dhcp(?DHCPDISCOVER, D, Config) ->
     end;
 handle_dhcp(?DHCPREQUEST, D, Config) ->
     ClientId = get_client_id(D),
-    lager:info("DHCPREQUEST from ~s ~s ~s",
+    ?LOG(info, "DHCPREQUEST from ~s ~s ~s",
 			  [fmt_clientid(D), fmt_hostname(D), fmt_gateway(D)]),
     case client_state(D) of
 	{selecting, ServerId} ->
@@ -59,7 +60,7 @@ handle_dhcp(?DHCPREQUEST, D, Config) ->
 		    allocated(ClientId, D#dhcp.chaddr, IP, D#dhcp.options, cfg(session, Config)),
 		    ack(D, IP, Options, Config);
 		nolease ->
-		    lager:error("Client ~s has no current bindings",
+		    ?LOG(error, "Client ~s has no current bindings",
 					   [fmt_clientid(D)]),
 		    ok;
 		{error, Reason} ->
@@ -77,12 +78,12 @@ handle_dhcp(?DHCPREQUEST, D, Config) ->
 handle_dhcp(?DHCPDECLINE, D, _Config) ->
     ClientId = get_client_id(D),
     IP = get_requested_ip(D),
-    lager:info("DHCPDECLINE of ~s from ~s ~s",
+    ?LOG(info, "DHCPDECLINE of ~s from ~s ~s",
 			  [fmt_ip(IP), fmt_clientid(D), fmt_hostname(D)]),
     dhcp_alloc:decline(ClientId, IP);
 handle_dhcp(?DHCPRELEASE, D, Config) ->
     ClientId = get_client_id(D),
-    lager:info("DHCPRELEASE of ~s from ~s ~s ~s",
+    ?LOG(info, "DHCPRELEASE of ~s from ~s ~s ~s",
 			  [fmt_ip(D#dhcp.ciaddr), fmt_clientid(D),
 			   fmt_hostname(D), fmt_gateway(D)]),
     dhcp_alloc:release(ClientId, D#dhcp.ciaddr),
@@ -91,7 +92,7 @@ handle_dhcp(?DHCPINFORM, D, Config) ->
     ClientId = get_client_id(D),
     Gateway = D#dhcp.giaddr,
     IP = D#dhcp.ciaddr,
-    lager:info("DHCPINFORM of ~s from ~s", [fmt_ip(IP), fmt_clientid(D)]),
+    ?LOG(info, "DHCPINFORM of ~s from ~s", [fmt_ip(IP), fmt_clientid(D)]),
     case dhcp_alloc:local_conf(Gateway) of
 	{ok, Opts} ->
 	    %% No Lease Time (RFC2131 sec. 4.3.5)
@@ -102,7 +103,7 @@ handle_dhcp(?DHCPINFORM, D, Config) ->
 	    Other
     end;
 handle_dhcp(MsgType, _D, _Config) ->
-    lager:error("Invalid DHCP message type ~p", [MsgType]),
+    ?LOG(error, "Invalid DHCP message type ~p", [MsgType]),
     ok.
 
 client_state(D) when is_record(D, dhcp) ->
@@ -134,7 +135,7 @@ reply(MsgType, D, Opts, Config) ->
 			 Opts]}}.
 
 offer(D, IP, Options, Config) ->
-    lager:info("DHCPOFFER on ~s to ~s ~s ~s",
+    ?LOG(info, "DHCPOFFER on ~s to ~s ~s ~s",
 	       [fmt_ip(IP), fmt_clientid(D),
 		fmt_hostname(D), fmt_gateway(D)]),
     reply(?DHCPOFFER, D#dhcp{ciaddr = ?INADDR_ANY,
@@ -144,7 +145,7 @@ offer(D, IP, Options, Config) ->
 	  Options, Config).
 
 ack(D, IP, Options, Config) ->
-    lager:info("DHCPACK on ~s to ~s ~s ~s",
+    ?LOG(info, "DHCPACK on ~s to ~s ~s ~s",
 			  [fmt_ip(IP), fmt_clientid(D),
 			   fmt_hostname(D), fmt_gateway(D)]),
 
@@ -154,7 +155,7 @@ ack(D, IP, Options, Config) ->
 	  Options, Config).
 
 nak(D, Reason, Config) ->
-    lager:info("DHCPNAK to ~s ~s ~s. ~s",
+    ?LOG(info, "DHCPNAK to ~s ~s ~s. ~s",
 			  [fmt_clientid(D), fmt_hostname(D),
 			   fmt_gateway(D), Reason]),
     reply(?DHCPNAK, D#dhcp{ciaddr = ?INADDR_ANY,
@@ -245,13 +246,13 @@ released(ClientId, IP, Session) ->
     invoke_session(released, [ClientId, IP], Session).
 
 invoke_session(_Event, _Args, undefined) ->
-    lager:error("Event for undefined session: ~p(~p)", [_Event, _Args]),
+    ?LOG(error, "Event for undefined session: ~p(~p)", [_Event, _Args]),
     ok;
 invoke_session(Event, Args, Session) ->
     try
 	erlang:apply(Session, Event, Args)
     catch
 	Class:Error ->
-	    lager:error("DHCP Session callback ~s:~s(~w) failed with ~w:~w", [Session, Event, Args, Class, Error]),
+	    ?LOG(error, "DHCP Session callback ~s:~s(~w) failed with ~w:~w", [Session, Event, Args, Class, Error]),
 	    ok
     end.
