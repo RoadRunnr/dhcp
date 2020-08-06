@@ -8,8 +8,9 @@
 -module(dhcp_lib).
 
 %% API
--export([decode/1, encode/1]).
+-export([decode/1, decode/2, encode/1]).
 -export([ip_to_binary/1, eth_to_binary/1]).
+-export([get_opt/3, put_opt/3]).
 -import(lists, [keymember/3, keysearch/3, keyreplace/4]).
 -include("dhcp.hrl").
 
@@ -20,19 +21,22 @@
 %% Function:
 %% Description:
 %%--------------------------------------------------------------------
-decode(<<Op, Htype, Hlen, Hops,  Xid:32, Secs:16, Flags:16,
+decode(Msg) ->
+    decode(Msg, list).
+
+decode(<<Op, Htype0, Hlen, Hops,  Xid:32, Secs:16, Flags:16,
 	Ciaddr:4/binary, Yiaddr:4/binary, Siaddr:4/binary, Giaddr:4/binary,
-	Chaddr:6/binary, _:10/binary, Sname:64/binary, File:128/binary,
-	Options/binary>>) ->
+	Chaddr0:16/binary, Sname:64/binary, File:128/binary,
+	Options/binary>>, Type) ->
     OptsList = case Options of
 		   <<99, 130, 83, 99, Opts/binary>> ->
-		       binary_to_options(Opts);
+		       decode_options(binary_to_options(Opts));
 		   _ -> %% return empty list if the MAGIC is not there
 		       []
 	       end,
+    {Htype, Chaddr} = decode_chaddr(Htype0, Hlen, Chaddr0),
     #dhcp{op      = Op,
 	  htype   = Htype,
-	  hlen    = Hlen,
 	  hops    = Hops,
 	  xid     = Xid,
 	  secs    = Secs,
@@ -41,15 +45,16 @@ decode(<<Op, Htype, Hlen, Hops,  Xid:32, Secs:16, Flags:16,
 	  yiaddr  = binary_to_ip(Yiaddr),
 	  siaddr  = binary_to_ip(Siaddr),
 	  giaddr  = binary_to_ip(Giaddr),
-	  chaddr  = binary_to_eth(Chaddr),
+	  chaddr  = Chaddr,
 	  sname   = binary_to_list(Sname),
 	  file    = binary_to_list(File),
-	  options = OptsList}.
+	  options = opts_to_type(OptsList, Type)}.
 
 encode(D) when is_record(D, dhcp) ->
+    {Hlen, Chaddr} = encode_chaddr(D#dhcp.htype, D#dhcp.chaddr),
+
     Op      = D#dhcp.op,
     Htype   = D#dhcp.htype,
-    Hlen    = D#dhcp.hlen,
     Hops    = D#dhcp.hops,
     Xid     = D#dhcp.xid,
     Secs    = D#dhcp.secs,
@@ -58,13 +63,40 @@ encode(D) when is_record(D, dhcp) ->
     Yiaddr  = ip_to_binary(D#dhcp.yiaddr),
     Siaddr  = ip_to_binary(D#dhcp.siaddr),
     Giaddr  = ip_to_binary(D#dhcp.giaddr),
-    Chaddr  = pad(eth_to_binary(D#dhcp.chaddr), 16),
     Sname   = pad(list_to_binary(D#dhcp.sname), 64),
     File    = pad(list_to_binary(D#dhcp.file), 128),
     Opts    = options_to_binary(D#dhcp.options),
     <<Op, Htype, Hlen, Hops, Xid:32, Secs:16, Flags:16,
      Ciaddr/binary, Yiaddr/binary, Siaddr/binary, Giaddr/binary,
      Chaddr/binary, Sname/binary, File/binary, Opts/binary>>.
+
+get_opt(Key, Opts, Default) when is_list(Opts) ->
+    proplists:get_value(Key, Opts, Default);
+get_opt(Key, Opts, Default) when is_map(Opts) ->
+    maps:get(Key, Opts, Default).
+
+put_opt(Key, Value, Opts) when is_list(Opts) ->
+    lists:keystore(1, Key, Opts, {Key, Value});
+put_opt(Key, Value, Opts) when is_map(Opts) ->
+    maps:put(Key, Value, Opts).
+
+opts_to_type(Opts, map) when is_map(Opts) -> Opts;
+opts_to_type(Opts, list) when is_list(Opts) -> Opts;
+opts_to_type(Opts, map) when is_list(Opts) ->
+    lists:foldl(
+      fun({K, V}, M) when K =:= ?DHO_VENDOR_ENCAPSULATED_OPTIONS;
+			 K =:= ?DHO_DHCP_AGENT_OPTIONS ->
+	      M#{K => opts_to_type(V, map)};
+	 ({K, V}, M) ->
+	      M#{K => V}
+      end, #{}, Opts);
+opts_to_type(Opts, list) when is_map(Opts) ->
+    maps:fold(
+      fun(K, V, L) when is_map(V) ->
+	      [{K, opts_to_type(V, list)}|L];
+	 (K, V, L) ->
+	      [{K, V}|L]
+      end, [], Opts).
 
 %%====================================================================
 %% Internal functions
@@ -75,18 +107,15 @@ binary_to_ip(<<A, B, C, D>>) ->
 eth_to_binary({A, B, C, D, E, F}) ->
     <<A, B, C, D, E, F>>.
 
-binary_to_eth(<<A, B, C, D, E, F>>) ->
-    {A, B, C, D, E, F}.
+encode_chaddr(1, {A, B, C, D, E, F}) ->
+    {6, pad(<<A, B, C, D, E, F>>, 16)};
+encode_chaddr(_, Bin) when is_binary(Bin), size(Bin) =< 16 ->
+    {size(Bin), pad(Bin, 16)}.
 
-binary_to_iplist(<<A, B, C, D, T/binary>>) ->
-    [{A, B, C, D} | binary_to_iplist(T)];
-binary_to_iplist(<<>>) ->
-    [].
-
-binary_to_shortlist(<<H:16, T/binary>>) ->
-    [H | binary_to_shortlist(T)];
-binary_to_shortlist(<<>>) ->
-    [].
+decode_chaddr(1, 6,  <<A, B, C, D, E, F, _/binary>>) ->
+    {1, {A, B, C, D, E, F}};
+decode_chaddr(Htype, Hlen, Chaddr) when Hlen =< 16 ->
+    {Htype, binary:part(Chaddr, 0, Hlen)}.
 
 ip_to_binary({A, B, C, D}) ->
     <<A, B, C, D>>.
@@ -97,82 +126,100 @@ pad(X, Size) when is_binary(X) ->
     <<X/binary, 0:Plen/integer-unit:8>>.
 
 binary_to_options(Binary) ->
-    binary_to_options(Binary, []).
+    binary_to_options(Binary, #{}).
 
-binary_to_options(<<?DHO_END, _/binary>>, Acc) ->
-    Acc;
-binary_to_options(<<Tag, Rest/binary>>, Acc) ->
-    Value = case type(Tag) of
-		byte ->
-		    <<1, Byte, T/binary>> = Rest,
-		    Byte;
-		short ->
-		    <<2, Short:16, T/binary>> = Rest,
-		    Short;
-		shortlist ->
-		    <<N, Binary:N/binary, T/binary>> = Rest,
-		    binary_to_shortlist(Binary);
-		integer ->
-		    <<4, Integer:32, T/binary>> = Rest,
-		    Integer;
-		string ->
-		    <<N, String:N/binary, T/binary>> = Rest,
-		    binary_to_list(String);
-		ip ->
-		    <<4, A, B, C, D, T/binary>> = Rest,
-		    {A, B, C, D};
-		iplist ->
-		    <<N, Binary:N/binary, T/binary>> = Rest,
-		    binary_to_iplist(Binary);
-		vendor ->
-		    <<N, Binary:N/binary, T/binary>> = Rest,
-		    binary_to_options(Binary);
-		relay_options ->
-		    <<N, Binary:N/binary, T/binary>> = Rest,
-		    binary_to_relay_suboptions(Binary);
-		unknown ->
-		    <<N, Binary:N/binary, T/binary>> = Rest,
-		    Binary
-	    end,
-    binary_to_options(T, [{Tag, Value} | Acc]).
+binary_to_options(Tag, Bin, Opts) when is_map_key(Tag, Opts) ->
+    maps:update_with(Tag, fun(V) -> <<V/binary, Bin/binary>> end, Opts);
+binary_to_options(Tag, Bin, Opts) ->
+    Opts#{Tag => Bin}.
+
+binary_to_options(<<?DHO_END, _/binary>>, Opts) -> Opts;
+binary_to_options(<<Tag:8, Size:8, Rest/binary>>, Opts) ->
+    <<Bin:Size/bytes, Next/binary>> = Rest,
+    binary_to_options(Next, binary_to_options(Tag, Bin, Opts)).
 
 binary_to_relay_suboptions(Bin) ->
-    binary_to_relay_suboptions(Bin, []).
-binary_to_relay_suboptions(<<>>, Acc) -> Acc;
-binary_to_relay_suboptions(<<Tag, N, SubOption:N/binary, Rest/binary>>, Acc) ->
-    binary_to_relay_suboptions(Rest, [{Tag, SubOption} | Acc ]).
+    binary_to_relay_suboptions(Bin, #{}).
 
+binary_to_relay_suboptions(<<>>, Opts) -> Opts;
+binary_to_relay_suboptions(<<Tag:8, Size:8, Rest/binary>>, Opts) ->
+    <<Bin:Size/bytes, Next/binary>> = Rest,
+    binary_to_relay_suboptions(Next, binary_to_options(Tag, Bin, Opts)).
 
-options_to_binary(Options) ->
-    L = [<<(option_to_binary(Tag, Val))/binary>> || {Tag, Val} <- Options],
-    list_to_binary(?DHCP_OPTIONS_COOKIE ++ L ++ [?DHO_END]).
-   
+decode_options(Opts) ->
+    maps:map(fun(Tag, Bin) -> decode_val(Bin, type(Tag)) end, Opts).
+
+decode_relay_options(Opts) ->
+    maps:map(fun(Tag, Bin) -> decode_val(Bin, relay_type(Tag)) end, Opts).
+
+decode_val(<<V:8>>, byte) ->
+    V;
+decode_val(<<V:16>>, short) ->
+    V;
+decode_val(Bin, shortlist) ->
+    [H || <<H:16>> <= Bin];
+decode_val(<<V:32>>, integer) ->
+    V;
+decode_val(String, string) ->
+    String;
+decode_val(Bin, ip) ->
+    binary_to_ip(Bin);
+decode_val(Bin, iplist) ->
+    [binary_to_ip(IP) || <<IP:4/bytes>> <= Bin];
+decode_val(<<1:8, Bin/binary>>, sip_servers) ->
+    [binary_to_ip(IP) || <<IP:4/bytes>> <= Bin];
+decode_val(Vendor, vendor) ->
+    binary_to_options(Vendor);
+decode_val(Bin, relay_options) ->
+    decode_relay_options(binary_to_relay_suboptions(Bin));
+decode_val(Bin, unknown) ->
+    Bin.
+
+options_to_binary(Options) when is_list(Options) ->
+    B = << <<(option_to_binary(Tag, Val))/binary>> || {Tag, Val} <- Options >>,
+    <<?DHCP_OPTIONS_COOKIE/binary, B/binary, ?DHO_END>>;
+options_to_binary(Options) when is_map(Options) ->
+    B = maps:fold(fun(Tag, Val, Acc) ->
+			  <<Acc/binary, (option_to_binary(Tag, Val))/binary>>
+		  end, ?DHCP_OPTIONS_COOKIE, Options),
+    <<B/binary, ?DHO_END>>.
+
 option_to_binary(Tag, Val) ->
-    case type(Tag) of
-	byte ->
-	    <<Tag, 1, Val>>;
-	short ->
-	    <<Tag, 2, Val:16/big>>;
-	shortlist ->
-	    B = list_to_binary([<<S:16/big>> || S <- Val]),
-	    <<Tag, (size(B)), B/binary>>;
-	integer ->
-	    <<Tag, 4, Val:32/big>>;
-	string ->
-	    B = list_to_binary(Val),
-	    <<Tag, (size(B)), B/binary>>;
-	ip ->
-	    <<Tag, 4, (ip_to_binary(Val))/binary>>;
-	iplist ->
-	    B = list_to_binary([ip_to_binary(IP) || IP <- Val]),
-	    <<Tag, (size(B)), B/binary>>;
-	vendor ->
-	    B = list_to_binary([<<T, (size(V)), V/binary>> || {T, V} <- Val]),
-	    <<Tag, (size(B)), B/binary>>;
-	relay_options ->
-	    B = list_to_binary([<<T, (size(V)), V/binary>> || {T, V} <- Val]),
-	    <<Tag, (size(B)), B/binary>>
-    end.
+    encode_opt(Tag, encode_val(type(Tag), Val)).
+
+encode_relay(Tag, Val) ->
+    Bin = encode_val(relay_type(Tag), Val),
+    <<Tag:8, (size(Bin)):8, Bin/binary>>.
+
+encode_opt(Tag, <<Bin:255/bytes, Rest/binary>>) ->
+    << (encode_opt(Tag, Bin))/binary, (encode_opt(Tag, Rest))/binary >>;
+encode_opt(Tag, Bin) ->
+    <<Tag:8, (size(Bin)):8, Bin/binary>>.
+
+encode_val(byte, Val) ->
+    <<Val:8>>;
+encode_val(short, Val) ->
+    <<Val:16>>;
+encode_val(shortlist, Val) ->
+    << <<S:16>> || S <- Val >>;
+encode_val(integer, Val) ->
+    <<Val:32>>;
+encode_val(string, Val) when is_binary(Val) ->
+    Val;
+encode_val(string, Val) when is_list(Val) ->
+    list_to_binary(Val);
+encode_val(ip, Val) ->
+    ip_to_binary(Val);
+encode_val(iplist, Val) ->
+    << <<(ip_to_binary(IP))/binary>> || IP <- Val >>;
+encode_val(sip_servers, [{_,_,_,_}|_] = Val) ->
+    <<1:8, << <<(ip_to_binary(IP))/binary>> || IP <- Val >>/binary>>;
+encode_val(vendor, Val) when is_binary(Val) ->
+    << <<Tag:8, (size(Bin)):8, Bin/binary>> || {Tag, Bin} <- Val >>;
+encode_val(relay_options, Val) when is_map(Val) ->
+    << <<(encode_relay(T,V))/binary>> || {T, V} <- maps:to_list(Val) >>;
+encode_val(relay_options, Val) when is_list(Val) ->
+    << <<(encode_relay(T,V))/binary>> || {T, V} <- Val >>.
 
 %%% DHCP Option types
 type(?DHO_SUBNET_MASK)                 -> ip;
@@ -259,5 +306,27 @@ type(?DHO_UAP)                         -> string;
 type(?DHO_AUTO_CONFIGURE)              -> byte;
 type(?DHO_NAME_SERVICE_SEARCH)         -> shortlist;
 type(?DHO_SUBNET_SELECTION)            -> ip;
+type(?DHO_SIP_SERVERS)                 -> sip_servers;
 type(?DHO_TFTP_SERVER_ADDRESS)         -> ip;
 type(_)                                -> unknown.
+
+relay_type(?RAI_CIRCUIT_ID)                  -> string;
+relay_type(?RAI_REMOTE_ID)                   -> string;
+relay_type(?RAI_AGENT_ID)                    -> string;
+relay_type(?RAI_DOCSIS_DEVICE_CLASS)         -> string;
+relay_type(?RAI_LINK_SELECTION)              -> ip;
+relay_type(?RAI_SUBSCRIBER_ID)               -> string;
+relay_type(?RAI_RADIUS_ATTRIBUTES)           -> string;
+relay_type(?RAI_AUTHENTICATION)              -> string;
+relay_type(?RAI_VENDOR_SPECIFIC_INFORMATION) -> string;
+relay_type(?RAI_RELAY_AGENT_FLAGS)           -> byte;
+relay_type(?RAI_SERVER_IDENTIFIER_OVERRIDE)  -> ip;
+relay_type(?RAI_RELAY_AGENT_IDENTIFIER)      -> string;
+relay_type(?RAI_ACCESS_TECHNOLOGY_TYPE)      -> byte;
+relay_type(?RAI_ACCESS_NETWORK_NAME)         -> string;
+relay_type(?RAI_ACCESS_POINT_NAME)           -> string;
+relay_type(?RAI_ACCESS_POINT_BSSID)          -> string;
+relay_type(?RAI_OPERATOR_IDENTIFIER)         -> integer;
+relay_type(?RAI_OPERATOR_REALM)              -> string;
+relay_type(?RAI_DHCPV4_RELAY_SOURCE_PORT)    -> short;
+relay_type(_)                                -> unknown.

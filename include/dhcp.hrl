@@ -14,12 +14,11 @@
 -define(HTYPE_FDDI,    8).    %% FDDI
 
 %%% Magic cookie validating dhcp options and bootp vendor extensions field
--define(DHCP_OPTIONS_COOKIE, [99, 130, 83, 99]).
+-define(DHCP_OPTIONS_COOKIE, <<99, 130, 83, 99>>).
 
 -record(dhcp, {
 	  op,                       %% Message opcode
 	  htype   = ?HTYPE_ETHER,   %% Hardware addr type
-	  hlen    = 6,              %% Hardware addr length
 	  hops    = 0,              %% Number of relay agent hops from client
 	  xid     = 0,              %% Transaction ID
 	  secs    = 0,              %% Seconds since client started looking
@@ -122,6 +121,7 @@
 -define(DHO_AUTO_CONFIGURE,             116). %% rfc2563
 -define(DHO_NAME_SERVICE_SEARCH,        117). %% rfc2937
 -define(DHO_SUBNET_SELECTION,           118). %% rfc3011
+-define(DHO_SIP_SERVERS,                120). %% rfc3361
 -define(DHO_TFTP_SERVER_ADDRESS,        150). %% rfc5859
 -define(DHO_END,                        255).
 
@@ -136,9 +136,25 @@
 -define(DHCPINFORM,   8).
 
 %%% Relay Agent Information option subtypes
--define(RAI_CIRCUIT_ID, 1).
--define(RAI_REMOTE_ID,  2).
--define(RAI_AGENT_ID,   3).
+-define(RAI_CIRCUIT_ID,                         1).
+-define(RAI_REMOTE_ID,                          2).
+-define(RAI_AGENT_ID,                           3).
+-define(RAI_DOCSIS_DEVICE_CLASS,                4).
+-define(RAI_LINK_SELECTION,                     5).
+-define(RAI_SUBSCRIBER_ID,                      6).
+-define(RAI_RADIUS_ATTRIBUTES,                  7).
+-define(RAI_AUTHENTICATION,                     8).
+-define(RAI_VENDOR_SPECIFIC_INFORMATION,        9).
+-define(RAI_RELAY_AGENT_FLAGS,                  10).
+-define(RAI_SERVER_IDENTIFIER_OVERRIDE,         11).
+-define(RAI_RELAY_AGENT_IDENTIFIER,             12).
+-define(RAI_ACCESS_TECHNOLOGY_TYPE,             13).
+-define(RAI_ACCESS_NETWORK_NAME,                14).
+-define(RAI_ACCESS_POINT_NAME,                  15).
+-define(RAI_ACCESS_POINT_BSSID,                 16).
+-define(RAI_OPERATOR_IDENTIFIER,                17).
+-define(RAI_OPERATOR_REALM,                     18).
+-define(RAI_DHCPV4_RELAY_SOURCE_PORT,           19).
 
 %%% FQDN suboptions
 -define(FQDN_NO_CLIENT_UPDATE, 1).
