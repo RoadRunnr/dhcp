@@ -9,7 +9,7 @@
 
 %% API
 -export([fmt_clientid/1, fmt_ip/1]).
--export([handle_dhcp/3, optsearch/2, expired/3]).
+-export([handle_dhcp/3, expired/3]).
 
 -include_lib("kernel/include/logger.hrl").
 -include("dhcp.hrl").
@@ -106,26 +106,23 @@ handle_dhcp(MsgType, _D, _Config) ->
     ?LOG(error, "Invalid DHCP message type ~p", [MsgType]),
     ok.
 
-client_state(D) when is_record(D, dhcp) ->
-    case optsearch(?DHO_DHCP_SERVER_IDENTIFIER, D) of
-	{value, ServerId} ->
-	    {selecting, ServerId};
-	false ->
-	    case optsearch(?DHO_DHCP_REQUESTED_ADDRESS, D) of
-		{value, RequestedIP} ->
-		    {init_reboot, RequestedIP};
-		false ->
-		    case ?is_broadcast(D) of
-			false ->
-			    {renewing, D#dhcp.ciaddr};
-			_ ->
-			    {rebinding, D#dhcp.ciaddr}
-		    end
-	    end
-    end.
+client_state(#dhcp{options = #{?DHO_DHCP_SERVER_IDENTIFIER := ServerId}}) ->
+    {selecting, ServerId};
+client_state(#dhcp{options = #{?DHO_DHCP_REQUESTED_ADDRESS := RequestedIP}}) ->
+    {init_reboot, RequestedIP};
+client_state(D) when ?is_broadcast(D) ->
+    {renewing, D#dhcp.ciaddr};
+client_state(D) ->
+    {rebinding, D#dhcp.ciaddr}.
 
 -define(reply(DHCP), {reply, DHCP}).
-reply(MsgType, D, Opts, Config) ->
+reply(MsgType, D, Opts0, Config) ->
+    Opts =
+	case maps:get(?DHO_DHCP_AGENT_OPTIONS, D#dhcp.options, undefined) of
+	    undefined -> Opts0;
+	    AgentOpts -> [{?DHO_DHCP_AGENT_OPTIONS, AgentOpts} | Opts0]
+	end,
+
     {reply, D#dhcp{
 	      op = ?BOOTREPLY,
 	      hops = 0,
@@ -165,29 +162,11 @@ nak(D, Reason, Config) ->
 			  },
 	  [{?DHO_DHCP_MESSAGE, Reason}], Config).
 
-optsearch(Option, D) when is_record(D, dhcp) ->
-    case lists:keysearch(Option, 1, D#dhcp.options) of
-	{value, {Option, Value}} ->
-	    {value, Value};
-	false ->
-	    false
-    end.
+get_client_id(#dhcp{chaddr = ChAddr, options = Opts}) ->
+    maps:get(?DHO_DHCP_CLIENT_IDENTIFIER, Opts, ChAddr).
 
-get_client_id(D) when is_record(D, dhcp) ->
-    case optsearch(?DHO_DHCP_CLIENT_IDENTIFIER, D) of
-        {value, ClientId} ->
-	    ClientId;
-	false ->
-	    D#dhcp.chaddr
-    end.
-
-get_requested_ip(D) when is_record(D, dhcp) ->
-    case optsearch(?DHO_DHCP_REQUESTED_ADDRESS, D) of
-        {value, IP} ->
-	    IP;
-	false ->
-	    ?INADDR_ANY
-    end.
+get_requested_ip(#dhcp{options = Opts}) ->
+    maps:get(?DHO_DHCP_REQUESTED_ADDRESS, Opts, ?INADDR_ANY).
 
 to_hex([], Acc) ->
     lists:flatten(lists:reverse(Acc));
@@ -200,24 +179,23 @@ fmt_clientid([1, E1, E2, E3, E4, E5, E6]) ->
     fmt_clientid({E1, E2, E3, E4, E5, E6});
 fmt_clientid(Id) when is_list(Id) ->
     to_hex(Id, []);
+fmt_clientid(Id) when is_binary(Id) ->
+    lists:flatten(
+      lists:join($:, [io_lib:format("~2.16.0b", [X]) || <<X:8>> <= Id]));
 fmt_clientid({E1, E2, E3, E4, E5, E6}) ->
     lists:flatten(
       io_lib:format("~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b:~2.16.0b",
 	     [E1, E2, E3, E4, E5, E6])).
 
-fmt_gateway(D) when is_record(D, dhcp) ->
-    case D#dhcp.giaddr of
-	?INADDR_ANY -> [];
-	IP          -> lists:flatten(io_lib:format("via ~s", [fmt_ip(IP)]))
-    end.
+fmt_gateway(#dhcp{giaddr = ?INADDR_ANY}) ->
+    [];
+fmt_gateway(#dhcp{giaddr = IP}) ->
+    lists:flatten(io_lib:format("via ~s", [fmt_ip(IP)])).
 
-fmt_hostname(D) when is_record(D, dhcp) ->
-    case optsearch(?DHO_HOST_NAME, D) of
-        {value, Hostname} ->
-            lists:flatten(io_lib:format("(~s)", [Hostname]));
-	false ->
-	    []
-    end.
+fmt_hostname(#dhcp{options = #{?DHO_HOST_NAME := Hostname}}) ->
+    lists:flatten(io_lib:format("(~s)", [Hostname]));
+fmt_hostname(_) ->
+    [].
 
 fmt_ip({A1, A2, A3, A4}) ->
     io_lib:format("~w.~w.~w.~w", [A1, A2, A3, A4]).

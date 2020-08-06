@@ -46,20 +46,20 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
     case get_config() of
-        {ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts, Session} ->
+	{ok, NetNameSpace, Interface, ServerId, NextServer, LeaseFile, Subnets, Hosts, Session} ->
 	    io:format("SubNets: ~p~n", [Subnets]),
-            %% DHCPServer = {dhcp_udp_server, {dhcp_udp_server, start_link,
-	    %% 				    [NetNameSpace, Interface, ServerId, NextServer]},
-            %%               permanent, 2000, worker, [dhcp_server]},
-            DHCPServer = {dhcp_raw_server, {dhcp_raw_server, start_link,
-					    [ServerId, NextServer, Session]},
-                          permanent, 2000, worker, [dhcp_raw_server]},
-            DHCPAlloc = {dhcp_alloc, {dhcp_alloc, start_link,
-                                      [LeaseFile, Subnets, Hosts, Session]},
-                         permanent, 2000, worker, [dhcp_alloc]},
-            {ok, {{one_for_one, 0, 1}, [DHCPServer, DHCPAlloc]}};
-        {error, Reason} ->
-            {error, Reason}
+	    DHCPServer = {dhcp_udp_server, {dhcp_udp_server, start_link,
+					    [NetNameSpace, Interface, ServerId, NextServer, Session]},
+			  permanent, 2000, worker, [dhcp_server]},
+	    %% DHCPServer = {dhcp_raw_server, {dhcp_raw_server, start_link,
+	    %%				    [ServerId, NextServer, Session]},
+	    %%               permanent, 2000, worker, [dhcp_raw_server]},
+	    DHCPAlloc = {dhcp_alloc, {dhcp_alloc, start_link,
+				      [LeaseFile, Subnets, Hosts, Session]},
+			 permanent, 2000, worker, [dhcp_alloc]},
+	    {ok, {{one_for_one, 0, 1}, [DHCPServer, DHCPAlloc]}};
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 %%====================================================================
@@ -79,12 +79,12 @@ get_config() ->
 get_config_file() ->
     ConfDir = case code:priv_dir(dhcp) of
 		  PrivDir when is_list(PrivDir) -> PrivDir;
-                  {error, _Reason} -> "."
-              end,
+		  {error, _Reason} -> "."
+	      end,
     case file:consult(filename:join(ConfDir, "dhcp.conf")) of
-        {ok, Terms} ->
+	{ok, Terms} ->
 	    process_config(Terms);
-        {error, Reason} ->
+	{error, Reason} ->
 	    {error, Reason}
     end.
 

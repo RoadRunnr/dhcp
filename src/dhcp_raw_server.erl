@@ -76,10 +76,10 @@ handle_call({dhcp, <<_IhlVer:8/integer, _Tos:8/integer, _TotLen:16/integer,
 		     SrcPort:16/integer, _DstPort:16/integer, _UDPLen:16/integer, _UDPCsum:16/integer,
 		     Packet/binary>>}, From, State) ->
     Source = {SrcIP, SrcPort},
-    Request = dhcp_lib:decode(Packet),
+    Request = dhcp_lib:decode(Packet, map),
     ?LOG(debug, "DHCP Request: ~p, ~p", [Source, Request]),
-    case dhcp_server:optsearch(?DHO_DHCP_MESSAGE_TYPE, Request) of
-	{value, MsgType} ->
+    case Request of
+	#dhcp{options = #{?DHO_DHCP_MESSAGE_TYPE := MsgType}} ->
 	    case dhcp_server:handle_dhcp(MsgType, Request, State#state.config) of
 		ok ->
 		    ok;

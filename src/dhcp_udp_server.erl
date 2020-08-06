@@ -36,13 +36,13 @@ init() ->
 
     %% load our nif library
     case erlang:load_nif(filename:join(LibDir, "dhcp_udp_server"), 0) of
-        ok ->
-            ok;
-        {error, {reload, _}} ->
-            ok;
-        {error, Error} ->
-            error_logger:error_msg("could not load dhcp_server nif library: ~p", [Error]),
-            error({load_nif, Error})
+	ok ->
+	    ok;
+	{error, {reload, _}} ->
+	    ok;
+	{error, Error} ->
+	    error_logger:error_msg("could not load dhcp_server nif library: ~p", [Error]),
+	    error({load_nif, Error})
     end.
 
 %%====================================================================
@@ -75,9 +75,9 @@ init([NetNameSpace, Interface, ServerId, NextServer, Session]) ->
 	    ?LOG(info, "Starting DHCP server..."),
 	    {ok, #state{if_name = Interface,
 			socket = Socket,
-			config = [#{server_id   => ServerId,
-				    next_server => NextServer,
-				    session     => Session}]}};
+			config = #{server_id   => ServerId,
+				   next_server => NextServer,
+				   session     => Session}}};
 	{error, Reason} ->
 	    ?LOG(error, "Cannot open udp port ~w",
 				   [?DHCP_SERVER_PORT]),
@@ -114,9 +114,8 @@ handle_cast(_Msg, State) ->
 %%--------------------------------------------------------------------
 handle_info({udp, Socket, IP, Port, Packet}, State = #state{socket = Socket}) ->
     Source = {IP, Port},
-    Request = dhcp_lib:decode(Packet),
-    case dhcp_server:optsearch(?DHO_DHCP_MESSAGE_TYPE, Request) of
-	{value, MsgType} ->
+    case dhcp_lib:decode(Packet, map) of
+	#dhcp{options = #{?DHO_DHCP_MESSAGE_TYPE := MsgType}} = Request ->
 	    case dhcp_server:handle_dhcp(MsgType, Request, State#state.config) of
 		ok ->
 		    ok;
@@ -161,9 +160,13 @@ send_reply(Source, MsgType, Reply, State) ->
     gen_udp:send(State#state.socket, DstIP, DstPort, dhcp_lib:encode(Reply)).
 
 %%% Behaviour is described in RFC2131 sec. 4.1
-get_dest(Source = {SrcIP, SrcPort}, MsgType, Reply, Config)
-  when is_record(Reply, dhcp) ->
-    if Reply#dhcp.giaddr =/= ?INADDR_ANY ->
+get_dest(Source = {SrcIP, SrcPort}, MsgType, #dhcp{options = Opts} = Reply, Config) ->
+    AgentInfo = dhcp_lib:get_opt(?DHO_DHCP_AGENT_OPTIONS, Opts, []),
+    if Reply#dhcp.giaddr =/= ?INADDR_ANY andalso
+       is_map_key(?RAI_DHCPV4_RELAY_SOURCE_PORT, AgentInfo) ->
+	    Source;
+
+       Reply#dhcp.giaddr =/= ?INADDR_ANY ->
 	    ?LOG(debug, "get_dest: #1"),
 	    {Reply#dhcp.giaddr, ?DHCP_SERVER_PORT};
 
